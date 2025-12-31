@@ -31,3 +31,57 @@ Notebooks in this repository can be used to reproduce the experiment presented i
 In addition to these, the two files `QDT_training.ipynb` and `QGAN_training.ipynb` show the training process of our benchmark models (Quantum Direct Transport and Quantum GAN, respectfully), and both utilize the JAX backend.
 
 Lastly, code in `bloch_visualize.ipynb` were used to generate the Bloch sphere visualizations used in the paper.
+
+## MNIST01 (0 vs 1) pipeline
+
+This course workspace includes a minimal end-to-end MNIST01 (binary 0/1) pipeline:
+
+- Prepare dataset (download MNIST, downsample to 14×14, PCA to 8 dims):
+      - scripts/mnist01_prepare.py
+- Encode latent vectors into $n=8$-qubit product states:
+      - scripts/mnist01_encode_states.py
+- Train a small CNN classifier on real images (used for evaluation features):
+      - scripts/mnist01_train_classifier.py
+- Train / generate with models:
+      - QGAN: scripts/mnist01_train_qgan.py, scripts/mnist01_generate_qgan.py
+      - QDT: scripts/mnist01_train_qdt.py, scripts/mnist01_generate_qdt.py
+      - QDDPM: scripts/mnist01_make_diffusion_qddpm.py, scripts/mnist01_train_qddpm.py, scripts/mnist01_generate_qddpm.py
+- Evaluate generated samples (KID in classifier feature space + optional latent MMD):
+      - scripts/mnist01_eval.py
+
+### Typical commands
+
+1) Data + encoding
+
+```bash
+conda activate qml_gpu
+
+python scripts/mnist01_prepare.py --out data/mnist01
+python scripts/mnist01_encode_states.py --data data/mnist01
+python scripts/mnist01_train_classifier.py --data data/mnist01
+```
+
+2) QGAN
+
+```bash
+python scripts/mnist01_train_qgan.py --data data/mnist01 --out data/mnist01/models/qgan --n 8
+python scripts/mnist01_generate_qgan.py --ckpt data/mnist01/models/qgan/qgan_mnist01_n8na0Lg40Lc12_cy3.npz --out data/mnist01/gen/qgan
+python scripts/mnist01_eval.py --data data/mnist01 --gen data/mnist01/gen/qgan
+```
+
+3) QDT
+
+```bash
+python scripts/mnist01_train_qdt.py --data data/mnist01 --out data/mnist01/models/qdt --n 8
+python scripts/mnist01_generate_qdt.py --ckpt data/mnist01/models/qdt/qdt_mnist01_n8na0L80_b128_e20000.npz --out data/mnist01/gen/qdt
+python scripts/mnist01_eval.py --data data/mnist01 --gen data/mnist01/gen/qdt
+```
+
+4) QDDPM
+
+```bash
+python scripts/mnist01_make_diffusion_qddpm.py --data data/mnist01 --out data/mnist01/diff --n 8 --T 20 --N 5000
+python scripts/mnist01_train_qddpm.py --data data/mnist01 --out data/mnist01/models/qddpm --n 8 --na 2 --T 20 --L 6 --N_train 256 --epochs 3000 --resume
+python scripts/mnist01_generate_qddpm.py --ckpt data/mnist01/models/qddpm/qddpm_mnist01_n8na2T20L6.npz --out data/mnist01/gen/qddpm --n 8 --na 2 --T 20 --L 6
+python scripts/mnist01_eval.py --data data/mnist01 --gen data/mnist01/gen/qddpm
+```

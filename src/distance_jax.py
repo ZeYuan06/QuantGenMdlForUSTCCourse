@@ -1,14 +1,23 @@
 import jax
 from jax import numpy as jnp
 
-from ott.geometry import pointcloud
-from ott.solvers.linear import solve
-from ott.geometry.costs import CostFn
-
 from opt_einsum import contract
 from functools import partial
 
 import ot
+
+_OTT_AVAILABLE = False
+try:
+    from ott.geometry import pointcloud  # type: ignore
+    from ott.solvers.linear import solve  # type: ignore
+    from ott.geometry.costs import CostFn  # type: ignore
+
+    _OTT_AVAILABLE = True
+except Exception:
+    # OTT is optional; keep naturalDistance usable.
+    pointcloud = None
+    solve = None
+    CostFn = object
 
 
 @jax.jit
@@ -44,21 +53,26 @@ def WassDistance(Set1, Set2):
     return Wass_dis
 
 
-@jax.tree_util.register_pytree_node_class
-class Trace(CostFn):
-    def pairwise(self, x: jnp.ndarray, y: jnp.ndarray) -> float:
-        return 1. - jnp.abs(jnp.conj(x) @ y.T) ** 2.
+if _OTT_AVAILABLE:
+    @jax.tree_util.register_pytree_node_class
+    class Trace(CostFn):
+        def pairwise(self, x: jnp.ndarray, y: jnp.ndarray) -> float:
+            return 1.0 - jnp.abs(jnp.conj(x) @ y.T) ** 2.0
 
 
-@partial(jax.jit, static_argnums=(2, 3, 4, ))
-def sinkhornDistance(Set1, Set2, reg=0.01, threshold=0.001, lse_mode=True):
-    '''
-        calculate the Sinkhorn distance between two sets of quantum states
-        the cost matrix is the inter trace distance between sets S1, S2
-        reg: the regularization coefficient
-        log: whether to use the log-solver
-    '''
-    geom = pointcloud.PointCloud(Set1, Set2, cost_fn=Trace(), epsilon=reg)
-    ot = solve(geom, a=None, b=None, lse_mode=lse_mode, threshold=threshold)
-
-    return ot.reg_ot_cost
+    @partial(jax.jit, static_argnums=(2, 3, 4, ))
+    def sinkhornDistance(Set1, Set2, reg=0.01, threshold=0.001, lse_mode=True):
+        '''
+            calculate the Sinkhorn distance between two sets of quantum states
+            the cost matrix is the inter trace distance between sets S1, S2
+            reg: the regularization coefficient
+            log: whether to use the log-solver
+        '''
+        geom = pointcloud.PointCloud(Set1, Set2, cost_fn=Trace(), epsilon=reg)
+        out = solve(geom, a=None, b=None, lse_mode=lse_mode, threshold=threshold)
+        return out.reg_ot_cost
+else:
+    def sinkhornDistance(*_args, **_kwargs):
+        raise RuntimeError(
+            "sinkhornDistance requires the 'ott' package, but it is not available/compatible in this environment."
+        )

@@ -185,19 +185,21 @@ class QDDPM():
         self.states_diff = states_diff
 
     @partial(jax.jit, static_argnums=(0, ))
-    def randomMeasure(self, inputs, key):
+    def randomMeasure(self, inputs, key=None):
         '''
         Given the inputs on both data & ancilla qubits before measurmenets,
         calculate the post-measurement state.
         The measurement and state output are calculated in parallel for data samples
         Args:
         inputs: states to be measured, first na qubit is ancilla
-        key: key for JAX's pseudo-random number generator
+        key: optional key for JAX's pseudo-random number generator
         '''
         n_batch = inputs.shape[0]
         m_probs = jnp.abs(jnp.reshape(
             inputs, [n_batch, 2 ** self.na, 2 ** self.n])) ** 2.0
         m_probs = jnp.log(jnp.sum(m_probs, axis=2))
+        if key is None:
+            key = jax.random.PRNGKey(42)
         m_res = jax.random.categorical(key, m_probs)
         indices = 2 ** self.n * \
             jnp.reshape(m_res, [-1, 1]) + jnp.arange(2 ** self.n)
@@ -207,12 +209,12 @@ class QDDPM():
         return post_state
 
     @partial(jax.jit, static_argnums=(0, ))
-    def backwardOutput_t(self, inputs, params, key):
+    def backwardOutput_t(self, inputs, params, key=None):
         '''
         Backward denoise process at step t
         Args:
         inputs: the input data set at step t
-        key: key for JAX's pseudo-random number generator
+        key: optional key for JAX's pseudo-random number generator
         '''
         # outputs through quantum circuits before measurement
         output_full = self.backCircuit_vmap(inputs, params)
@@ -222,7 +224,7 @@ class QDDPM():
 
         return output_t
 
-    def prepareInput_t(self, inputs_T, params_tot, t, Ndata):
+    def prepareInput_t(self, inputs_T, params_tot, t, Ndata, seed=None):
         '''
         Prepare the input samples for step t
         Args:
@@ -230,8 +232,9 @@ class QDDPM():
         params_tot: all circuit parameters till step t+1
         '''
         # create a key for PRNG
-        seed = int(1e6 * datetime.datetime.now().timestamp())
-        key = jax.random.PRNGKey(seed)
+        if seed is None:
+            seed = int(1e6 * datetime.datetime.now().timestamp())
+        key = jax.random.PRNGKey(int(seed))
 
         zero_shape = 2 ** self.n_tot - 2 ** self.n
         zero_tensor = jnp.zeros(shape=(Ndata, zero_shape), dtype=jnp.complex64)
@@ -243,13 +246,14 @@ class QDDPM():
 
         return input_t_plus_1
 
-    def backDataGeneration(self, inputs_T, params_tot, Ndata):
+    def backDataGeneration(self, inputs_T, params_tot, Ndata, seed=None):
         '''
         generate the dataset in backward denoise process with training data set
         '''
         # create a key for PRNG
-        seed = int(1e6 * datetime.datetime.now().timestamp())
-        key = jax.random.PRNGKey(seed)
+        if seed is None:
+            seed = int(1e6 * datetime.datetime.now().timestamp())
+        key = jax.random.PRNGKey(int(seed))
 
         states = [inputs_T]
         zero_shape = 2 ** self.n_tot - 2 ** self.n

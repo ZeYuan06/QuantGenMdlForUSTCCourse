@@ -102,18 +102,21 @@ class QGAN():
                                        vectorized_argnums=0))
         
     @partial(jax.jit, static_argnums=(0, ))
-    def randomMeasure(self, inputs):
+    def randomMeasure(self, inputs, key=None):
         '''
         Given the inputs on both data & ancilla qubits before measurmenets,
         calculate the post-measurement state.
         The measurement and state output are calculated in parallel for data samples
         Args:
         inputs: states to be measured, first na qubit is ancilla
+        key: optional PRNGKey for measurement sampling
         '''
         n_batch = inputs.shape[0]
         m_probs = jnp.abs(jnp.reshape(inputs, [n_batch, 2 ** self.na, 2 ** self.n])) ** 2.0
         m_probs = jnp.log(jnp.sum(m_probs, axis=2))
-        m_res = jax.random.categorical(jax.random.PRNGKey(42), m_probs)
+        if key is None:
+            key = jax.random.PRNGKey(42)
+        m_res = jax.random.categorical(key, m_probs)
         indices = 2 ** self.n * jnp.reshape(m_res, [-1, 1]) + jnp.arange(2 ** self.n)
         post_state = jnp.take_along_axis(inputs, indices, axis=1)
         post_state /= jnp.linalg.norm(post_state, axis=1)[:, jnp.newaxis]
@@ -121,12 +124,13 @@ class QGAN():
         return post_state
     
     @partial(jax.jit, static_argnums=(0, ))
-    def dataGenerate(self, inputs, params):
+    def dataGenerate(self, inputs, params, key=None):
         '''
         Backward denoise process at step t: including PQC and random measurement
         Args:
         inputs: the input data set at step t
         params: the parameters for the PQC
+        key: optional PRNGKey for measurement sampling
         '''
         # outputs through quantum circuits before measurement
         zero_tensor = jnp.zeros(shape=(inputs.shape[0], 2**self.n_tot-2**self.n), dtype=jnp.complex64)
@@ -134,5 +138,5 @@ class QGAN():
         output_full = self.backCircuit_vmap(inputs_full, params)
 
         # perform measurement
-        states_gen = self.randomMeasure(output_full)
+        states_gen = self.randomMeasure(output_full, key)
         return states_gen
